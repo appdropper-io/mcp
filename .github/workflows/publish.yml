@@ -1,0 +1,66 @@
+name: Publish to npm
+
+# Releases are a git tag and nothing else. No npm token lives in this
+# repository: npm verifies this workflow over OIDC ("trusted publishing").
+# Configure it at npmjs.com → @appdropper/mcp → Settings → Trusted publishing:
+#   organization: appdropper-io   repository: mcp
+#   workflow: publish.yml         allowed action: npm publish
+# Trusted publishing can only be configured once the package exists, so the
+# very first version is published by hand (see RELEASING.md).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # Typecheck + lint + build + every test. A broken server must never
+      # reach npm just because the tag matched.
+      - run: npm run check
+
+      - name: Verify the tag matches package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies $TAG but package.json says $PKG"
+            exit 1
+          fi
+
+      # The packed tarball must start as an MCP server with nothing on stdout
+      # but the protocol, exactly as `npx -y @appdropper/mcp` will run it.
+      - name: Smoke-test the packed package
+        run: |
+          npm pack
+          mkdir /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/appdropper-mcp-*.tgz
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | npx appdropper-mcp > out.jsonl
+          node -e '
+            const lines = require("fs").readFileSync("out.jsonl","utf8").trim().split("\n");
+            const tools = JSON.parse(lines[1]).result.tools.map(t => t.name).sort();
+            if (tools.join() !== "find_builds,get_build,list_apps,list_builds,upload_build,whoami") throw new Error(tools.join());
+            console.log("ok:", tools.join(", "));'
+
+      - run: npm publish

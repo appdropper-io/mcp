@@ -1,0 +1,74 @@
+{
+  "name": "@appdropper/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for App Dropper. Lets Claude Code, Cursor, VS Code Copilot and other MCP clients upload .apk and .ipa builds and return the tester install link.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "appdropper",
+    "apk",
+    "ipa",
+    "beta-testing",
+    "build-distribution",
+    "claude-code",
+    "cursor",
+    "copilot",
+    "flutter",
+    "react-native"
+  ],
+  "homepage": "https://appdropper.io/help/mcp",
+  "bugs": {
+    "url": "https://appdropper.io/contact"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appdropper-io/mcp.git"
+  },
+  "license": "MIT",
+  "author": "App Dropper",
+  "type": "module",
+  "bin": {
+    "appdropper-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "npm run build && node --test --test-reporter=spec test/*.test.js",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "prepublishOnly": "npm run check"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.2.0",
+    "appdropper": "^1.2.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@types/node": "^20.19.0",
+    "eslint": "^10.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

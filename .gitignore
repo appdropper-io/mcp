@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+# Regenerated from the registry once appdropper@1.2.0 is published (see RELEASING.md).
+package-lock.json

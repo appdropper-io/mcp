@@ -1,0 +1,28 @@
+name: Test
+
+# Every push and PR. publish.yml only runs on a release tag.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        # The MCP TypeScript SDK v2 requires Node 20+.
+        node: ["20", "22", "24"]
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      # Typecheck, lint, build, then the full suite — including the stdio
+      # process tests and the 1 GB streaming test.
+      - run: npm run check
