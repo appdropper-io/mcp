@@ -20,6 +20,8 @@ export interface ToolFailure {
   hint?: string;
   /** Present on plan-limit errors: where to upgrade. */
   upgrade_url?: string;
+  /** The plan that lifts the limit ("pro" or "studio"), when the API said so. */
+  upgrade_to?: string;
   /** True when trying the same call again later can succeed. */
   retryable: boolean;
   /** The upload this concerns, so the build can still be found later. */
@@ -80,6 +82,43 @@ function upgradeUrl(message: string): string | undefined {
   return message.match(URL_PATTERN)?.[0]?.replace(/[.,;]+$/, "");
 }
 
+/** The API's structured `upgrade` block, carried by appdropper 1.4.0 and later. */
+interface UpgradeBlock {
+  limit?: string;
+  upgrade_to?: string | null;
+  upgrade_url?: string;
+}
+
+/**
+ * Where to upgrade, preferring the API's structured block over parsing the
+ * message (older appdropper versions and servers only have the message).
+ */
+function upgradeFor(
+  err: unknown,
+  message: string
+): { upgrade_url?: string; upgrade_to?: string; limit?: string } {
+  const block = (err as { upgrade?: UpgradeBlock }).upgrade;
+  if (block?.upgrade_url) {
+    return {
+      upgrade_url: block.upgrade_url,
+      ...(block.upgrade_to ? { upgrade_to: block.upgrade_to } : {}),
+      ...(block.limit ? { limit: block.limit } : {}),
+    };
+  }
+  const url = upgradeUrl(message);
+  return url ? { upgrade_url: url } : {};
+}
+
+const PLAN_LIMIT_HINT =
+  "This is a plan limit, so retrying won't help. Tell the user, and share the upgrade link.";
+const TOP_PLAN_HINT =
+  "This is the highest plan's limit, so retrying won't help. Tell the user they can contact support to raise it.";
+
+/** The right next step for a plan limit: upgrade, or (on Studio) support. */
+function planHint(url: string | undefined): string {
+  return url?.startsWith("mailto:") ? TOP_PLAN_HINT : PLAN_LIMIT_HINT;
+}
+
 const NETWORK_CODES = new Set([
   "ECONNREFUSED",
   "ECONNRESET",
@@ -135,12 +174,14 @@ function classify(err: unknown): ToolFailure {
   }
   if (err instanceof BuildProcessingError) {
     const plan = err.code === "upgrade_required";
+    const upgrade = plan ? upgradeFor(err, err.message) : {};
     return {
       code: plan ? "plan_limit" : "invalid_build",
       message: err.message,
-      upgrade_url: plan ? upgradeUrl(err.message) : undefined,
+      upgrade_url: upgrade.upgrade_url,
+      ...(upgrade.upgrade_to ? { upgrade_to: upgrade.upgrade_to } : {}),
       hint: plan
-        ? undefined
+        ? planHint(upgrade.upgrade_url)
         : "App Dropper received the file but couldn't read it as an app. Check it is a complete, signed .apk or an exported .ipa.",
       upload_id: err.uploadId,
       retryable: false,
@@ -182,7 +223,12 @@ function classify(err: unknown): ToolFailure {
 
 function fromApiError(err: ApiError): ToolFailure {
   const base = { message: err.message, http_status: err.status };
-  const plan = upgradeUrl(err.message);
+  const upgrade = upgradeFor(err, err.message);
+  const plan = upgrade.upgrade_url;
+  const planFields = {
+    ...(plan ? { upgrade_url: plan } : {}),
+    ...(upgrade.upgrade_to ? { upgrade_to: upgrade.upgrade_to } : {}),
+  };
   switch (err.status) {
     case 401:
       return {
@@ -192,7 +238,7 @@ function fromApiError(err: ApiError): ToolFailure {
         retryable: false,
       };
     case 402:
-      return { ...base, code: "plan_limit", upgrade_url: plan, retryable: false };
+      return { ...base, code: "plan_limit", ...planFields, hint: planHint(plan), retryable: false };
     case 403:
       return {
         ...base,
@@ -203,11 +249,17 @@ function fromApiError(err: ApiError): ToolFailure {
     case 404:
       return { ...base, code: "not_found", retryable: false };
     case 429:
+      // Servers before the fix sent a full storage quota as 429. Waiting never
+      // frees space, so don't tell the model to retry it.
+      if (plan && !upgrade.limit && /storage/i.test(err.message)) {
+        return { ...base, code: "plan_limit", ...planFields, hint: planHint(plan), retryable: false };
+      }
       return {
         ...base,
         code: "rate_limited",
-        // Per-plan upload caps arrive as 429 too, and carry an upgrade link.
-        ...(plan ? { upgrade_url: plan } : {}),
+        // The hourly upload cap is a 429 too (waiting does clear it), and
+        // carries an upgrade link.
+        ...planFields,
         hint: "Wait for the time given in the message, then try again.",
         retryable: true,
       };
@@ -230,7 +282,13 @@ function fromApiError(err: ApiError): ToolFailure {
 export function failureText(prefix: string, failure: ToolFailure): string {
   return [
     `${prefix}: ${failure.message}`,
-    failure.upgrade_url ? `Upgrade: ${failure.upgrade_url}` : "",
+    failure.upgrade_url
+      ? failure.upgrade_url.startsWith("mailto:")
+        ? `Contact: ${failure.upgrade_url.slice("mailto:".length)}`
+        : failure.upgrade_to
+        ? `Upgrade to ${failure.upgrade_to.charAt(0).toUpperCase()}${failure.upgrade_to.slice(1)}: ${failure.upgrade_url}`
+        : `Upgrade: ${failure.upgrade_url}`
+      : "",
     failure.hint ?? "",
     failure.upload_id ? `Upload ID: ${failure.upload_id}` : "",
     `(error code: ${failure.code}${failure.http_status ? `, HTTP ${failure.http_status}` : ""}${
