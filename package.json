@@ -1,6 +1,6 @@
 {
   "name": "@appdropper/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for App Dropper. Lets Claude Code, Cursor, VS Code Copilot and other MCP clients upload .apk and .ipa builds and return the tester install link.",
   "keywords": [
     "mcp",

@@ -110,7 +110,7 @@ describe("upload_build", () => {
       assert.equal(body.tag, "qa");
       assert.equal(body.ci, undefined, "an editor upload must not pretend to be CI");
       assert.equal(reserve.headers.authorization, `Bearer ${TOKEN}`);
-      assert.match(reserve.headers["user-agent"], /^appdropper-mcp\/0\.1\.0 appdropper\/1\.2\.0 node\//);
+      assert.match(reserve.headers["user-agent"], /^appdropper-mcp\/0\.2\.0 appdropper\/1\.2\.0 node\//);
       const put = api.requests.find((r) => r.method === "PUT");
       assert.equal(put.bytes, 4096, "the whole file reached storage");
       assert.equal(put.headers.authorization, undefined, "the token must never go to storage");

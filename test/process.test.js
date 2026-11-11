@@ -138,7 +138,7 @@ test("exits cleanly on SIGTERM", async () => {
 test("--version prints the version to stderr and leaves stdout empty", () => {
   const result = spawnSyncNode([SERVER_ENTRY, "--version"]);
   assert.equal(result.stdout, "");
-  assert.match(result.stderr, /^0\.1\.0\n$/);
+  assert.match(result.stderr, /^0\.2\.0\n$/);
 });
 
 test("a 1 GB build is streamed, not buffered: memory stays flat", { timeout: 180_000 }, async () => {

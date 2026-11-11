@@ -140,6 +140,37 @@ describe("toFailure", () => {
     assert.equal(failure.upgrade_url, "https://appdropper.io/pricing");
   });
 
+  test("prefers the API's structured upgrade block and names the plan", () => {
+    const err = Object.assign(new ApiError(402, "upgrade_required", "This build is 600 MB. Upgrade to Studio at https://appdropper.io/pricing"), {
+      upgrade: { limit: "maxUploadBytes", current_plan: "pro", upgrade_to: "studio", upgrade_url: "https://appdropper.io/pricing" },
+    });
+    const failure = toFailure(err);
+    assert.equal(failure.code, "plan_limit");
+    assert.equal(failure.retryable, false);
+    assert.equal(failure.upgrade_to, "studio");
+    assert.match(failureText("Upload failed", failure), /Upgrade to Studio: https:\/\/appdropper\.io\/pricing/);
+    assert.match(failure.hint, /retrying won't help/);
+  });
+
+  test("a Studio limit points at support, not at an upgrade", () => {
+    const err = Object.assign(new ApiError(402, "upgrade_required", "Too big. Contact support@appdropper.io to raise this limit."), {
+      upgrade: { limit: "maxUploadBytes", current_plan: "studio", upgrade_to: null, upgrade_url: "mailto:support@appdropper.io" },
+    });
+    const text = failureText("Upload failed", toFailure(err));
+    assert.match(text, /Contact: support@appdropper\.io/);
+    assert.match(text, /contact support/);
+    assert.doesNotMatch(text, /Upgrade/);
+  });
+
+  test("a full storage quota from an older server (429) is a plan limit, not retryable", () => {
+    const failure = toFailure(
+      new ApiError(429, "rate_limited", "You've used 1 GB of your 1 GB storage. Delete an old build to free up space, or upgrade for more. Upgrade to Pro at https://appdropper.io/pricing")
+    );
+    assert.equal(failure.code, "plan_limit");
+    assert.equal(failure.retryable, false);
+    assert.equal(failure.upgrade_url, "https://appdropper.io/pricing");
+  });
+
   test("never lets a token through, wherever it appears", () => {
     const token = "adp_abc123_ZZZZsecretZZZZsecretZZZZsecret";
     const failure = toFailure(new ApiError(400, "invalid_request", `Bad token ${token} sent`));
